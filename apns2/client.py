@@ -7,6 +7,7 @@ import weakref
 from enum import Enum
 from threading import Thread
 from typing import Dict, Iterable, Optional, Tuple, Union
+import httpx
 
 from .credentials import CertificateCredentials, Credentials
 from .errors import ConnectionFailed, exception_class_for_reason
@@ -67,9 +68,9 @@ class APNsClient(object):
 
     def _init_connection(self, use_sandbox: bool, use_alternative_port: bool, proto: Optional[str],
                          proxy_host: Optional[str], proxy_port: Optional[int]) -> None:
-        server = self.SANDBOX_SERVER if use_sandbox else self.LIVE_SERVER
-        port = self.ALTERNATIVE_PORT if use_alternative_port else self.DEFAULT_PORT
-        self._connection = self.__credentials.create_connection(server, port, proto, proxy_host, proxy_port)
+        self._server = self.SANDBOX_SERVER if use_sandbox else self.LIVE_SERVER
+        self._port = self.ALTERNATIVE_PORT if use_alternative_port else self.DEFAULT_PORT
+        self._connection = self.__credentials.create_connection(self._server, self._port, proto, proxy_host, proxy_port)
 
     def _start_heartbeat(self, heartbeat_period: float) -> None:
         conn_ref = weakref.ref(self._connection)
@@ -145,25 +146,25 @@ class APNsClient(object):
         if collapse_id is not None:
             headers['apns-collapse-id'] = collapse_id
 
-        url = '/3/device/{}'.format(token_hex)
-        stream_id = self._connection.request('POST', url, json_payload, headers)  # type: int
-        return stream_id
+        url = f'https://{self._server}:{self._port}/3/device/{token_hex}'
+        response = self._connection.post(url, content=json_payload, headers=headers)
+        return response.stream_id
 
     def get_notification_result(self, stream_id: int) -> Union[str, Tuple[str, str]]:
         """
         Get result for specified stream
         The function returns: 'Success' or 'failure reason' or ('Unregistered', timestamp)
         """
-        with self._connection.get_response(stream_id) as response:
-            if response.status == 200:
-                return 'Success'
+        response = self._connection.get(f'https://{self._server}:{self._port}')
+        if response.status_code == 200:
+            return 'Success'
+        else:
+            raw_data = response.read().decode('utf-8')
+            data = json.loads(raw_data)  # type: Dict[str, str]
+            if response.status == 410:
+                return data['reason'], data['timestamp']
             else:
-                raw_data = response.read().decode('utf-8')
-                data = json.loads(raw_data)  # type: Dict[str, str]
-                if response.status == 410:
-                    return data['reason'], data['timestamp']
-                else:
-                    return data['reason']
+                return data['reason']
 
     def send_notification_batch(self, notifications: Iterable[Notification], topic: Optional[str] = None,
                                 priority: NotificationPriority = NotificationPriority.Immediate,
@@ -219,12 +220,12 @@ class APNsClient(object):
         return results
 
     def update_max_concurrent_streams(self) -> None:
-        # Get the max_concurrent_streams setting returned by the server.
-        # The max_concurrent_streams value is saved in the H2Connection instance that must be
-        # accessed using a with statement in order to acquire a lock.
-        # pylint: disable=protected-access
-        with self._connection._conn as connection:
-            max_concurrent_streams = connection.remote_settings.max_concurrent_streams
+        # Get the max_concurrent_streams from httpx client settings
+        try:
+            max_concurrent_streams = int(self._connection.settings.max_concurrent_streams)
+        except (AttributeError, TypeError, ValueError):
+            # Default to a safe value if we can't get the setting
+            max_concurrent_streams = CONCURRENT_STREAMS_SAFETY_MAXIMUM
 
         if max_concurrent_streams == self.__previous_server_max_concurrent_streams:
             # The server hasn't issued an updated SETTINGS frame.

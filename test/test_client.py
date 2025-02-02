@@ -21,10 +21,9 @@ def notifications(tokens):
     return [Notification(token=token, payload=payload) for token in tokens]
 
 
-@patch('apns2.credentials.init_context')
 @pytest.fixture
 def client(mock_connection):
-    with patch('apns2.credentials.HTTP20Connection') as mock_connection_constructor:
+    with patch('httpx.Client') as mock_connection_constructor:
         mock_connection_constructor.return_value = mock_connection
         return APNsClient(credentials=Credentials())
 
@@ -37,29 +36,30 @@ def mock_connection():
     mock_connection.__mock_results = None
     mock_connection.__next_stream_id = 0
 
-    @contextlib.contextmanager
-    def mock_get_response(stream_id):
-        mock_connection.__open_streams -= 1
-        if mock_connection.__mock_results:
-            reason = mock_connection.__mock_results[stream_id]
-            response = Mock(status=200 if reason == 'Success' else 400)
-            response.read.return_value = ('{"reason": "%s"}' % reason).encode('utf-8')
-            yield response
-        else:
-            yield Mock(status=200)
-
-    def mock_request(*_args):
+    def mock_post(*args, **kwargs):
         mock_connection.__open_streams += 1
         mock_connection.__max_open_streams = max(mock_connection.__open_streams, mock_connection.__max_open_streams)
 
         stream_id = mock_connection.__next_stream_id
         mock_connection.__next_stream_id += 1
-        return stream_id
+        
+        response = Mock(stream_id=stream_id)
+        return response
 
-    mock_connection.get_response.side_effect = mock_get_response
-    mock_connection.request.side_effect = mock_request
-    mock_connection._conn.__enter__.return_value = mock_connection._conn
-    mock_connection._conn.remote_settings.max_concurrent_streams = 500
+    def mock_get(*args, **kwargs):
+        mock_connection.__open_streams -= 1
+        if mock_connection.__mock_results:
+            stream_id = kwargs.get('stream_id', 0)
+            reason = mock_connection.__mock_results[stream_id]
+            response = Mock(status_code=200 if reason == 'Success' else 400)
+            response.read.return_value = ('{"reason": "%s"}' % reason).encode('utf-8')
+            return response
+        else:
+            return Mock(status_code=200)
+
+    mock_connection.post.side_effect = mock_post
+    mock_connection.get.side_effect = mock_get
+    mock_connection.settings = Mock(max_concurrent_streams=500)
 
     return mock_connection
 
@@ -102,14 +102,14 @@ def test_send_notification_batch_respects_max_concurrent_streams_from_server(cli
 
 def test_send_notification_batch_overrides_server_max_concurrent_streams_if_too_large(client, mock_connection, tokens,
                                                                                       notifications):
-    mock_connection._conn.remote_settings.max_concurrent_streams = 5000
+    mock_connection.settings.max_concurrent_streams = 5000
     client.send_notification_batch(notifications, TOPIC)
     assert mock_connection.__max_open_streams == CONCURRENT_STREAMS_SAFETY_MAXIMUM
 
 
 def test_send_notification_batch_overrides_server_max_concurrent_streams_if_too_small(client, mock_connection, tokens,
                                                                                       notifications):
-    mock_connection._conn.remote_settings.max_concurrent_streams = 0
+    mock_connection.settings.max_concurrent_streams = 0
     client.send_notification_batch(notifications, TOPIC)
     assert mock_connection.__max_open_streams == 1
 

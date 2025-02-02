@@ -19,18 +19,24 @@ classifiers = [
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries"
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.7"
+python = ">=3.7,<4.0"
 cryptography = ">=1.7.2"
-hyper = ">=0.7"
+httpx = ">=0.24.0"
 pyjwt = ">=2.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
 freezegun = "*"
+
+[tool.poetry.group.dev.dependencies]
+freezegun = "^1.5.1"
 
 [tool.mypy]
 python_version = "3.7"
