@@ -33,9 +33,6 @@ pyjwt = ">=2.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
-freezegun = "*"
-
-[tool.poetry.group.dev.dependencies]
 freezegun = "^1.5.1"
 
 [tool.mypy]
