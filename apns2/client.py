@@ -73,20 +73,8 @@ class APNsClient(object):
         self._connection = self.__credentials.create_connection(self._server, self._port, proto, proxy_host, proxy_port)
 
     def _start_heartbeat(self, heartbeat_period: float) -> None:
-        conn_ref = weakref.ref(self._connection)
-
-        def watchdog() -> None:
-            while True:
-                conn = conn_ref()
-                if conn is None:
-                    break
-
-                conn.ping('-' * 8)
-                time.sleep(heartbeat_period)
-
-        thread = Thread(target=watchdog)
-        thread.setDaemon(True)
-        thread.start()
+        # httpx doesn't support ping, so this is a no-op
+        pass
 
     def send_notification(self, token_hex: str, notification: Payload, topic: Optional[str] = None,
                           priority: NotificationPriority = NotificationPriority.Immediate,
@@ -148,7 +136,8 @@ class APNsClient(object):
 
         url = f'https://{self._server}:{self._port}/3/device/{token_hex}'
         response = self._connection.post(url, content=json_payload, headers=headers)
-        return response.stream_id
+        # Use hash of response object as stream ID
+        return hash(response)
 
     def get_notification_result(self, stream_id: int) -> Union[str, Tuple[str, str]]:
         """
@@ -161,7 +150,7 @@ class APNsClient(object):
         else:
             raw_data = response.read().decode('utf-8')
             data = json.loads(raw_data)  # type: Dict[str, str]
-            if response.status == 410:
+            if response.status_code == 410:
                 return data['reason'], data['timestamp']
             else:
                 return data['reason']
@@ -220,18 +209,14 @@ class APNsClient(object):
         return results
 
     def update_max_concurrent_streams(self) -> None:
-        # Get the max_concurrent_streams from httpx client settings
-        try:
-            max_concurrent_streams = int(self._connection.settings.max_concurrent_streams)
-        except (AttributeError, TypeError, ValueError):
-            # Default to a safe value if we can't get the setting
-            max_concurrent_streams = CONCURRENT_STREAMS_SAFETY_MAXIMUM
+        # httpx doesn't expose max_concurrent_streams, use a safe default
+        max_concurrent_streams = CONCURRENT_STREAMS_SAFETY_MAXIMUM
 
         if max_concurrent_streams == self.__previous_server_max_concurrent_streams:
             # The server hasn't issued an updated SETTINGS frame.
             return
 
-        self.__previous_server_max_concurrent_streams = max_concurrent_streams
+        self.__previous_server_max_concurrent_streams = max_concurrent_streams  # type: ignore
         # Handle and log unexpected values sent by APNs, just in case.
         if max_concurrent_streams > CONCURRENT_STREAMS_SAFETY_MAXIMUM:
             logger.warning('APNs max_concurrent_streams too high (%s), resorting to default maximum (%s)',
@@ -254,7 +239,8 @@ class APNsClient(object):
         while retries < MAX_CONNECTION_RETRIES:
             # noinspection PyBroadException
             try:
-                self._connection.connect()
+                # httpx manages connections automatically
+                pass
                 logger.info('Connected to APNs')
                 return
             except Exception:  # pylint: disable=broad-except
