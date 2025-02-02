@@ -27,7 +27,7 @@ class Credentials(object):
         proxies = None
         if proxy_host and proxy_port:
             proxies = f"http://{proxy_host}:{proxy_port}"
-        
+
         return httpx.Client(
             http2=True,
             verify=self.__ssl_context if self.__ssl_context else True,
@@ -95,9 +95,9 @@ class TokenCredentials(Credentials):
                 'alg': self.__encryption_algorithm,
                 'kid': self.__auth_key_id,
             }
-            jwt_token = jwt.encode(token_dict, self.__auth_key,
-                                   algorithm=self.__encryption_algorithm,
-                                   headers=headers)
+            jwt_token = str(jwt.encode(token_dict, self.__auth_key,
+                                       algorithm=self.__encryption_algorithm,
+                                       headers=headers))
 
             # Cache JWT token for later use. One JWT token per connection.
             # https://developer.apple.com/documentation/usernotifications/setting_up_a_remote_notification_server/establishing_a_token-based_connection_to_apns

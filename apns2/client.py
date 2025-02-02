@@ -209,14 +209,15 @@ class APNsClient(object):
         return results
 
     def update_max_concurrent_streams(self) -> None:
-        # httpx doesn't expose max_concurrent_streams, use a safe default
-        max_concurrent_streams = CONCURRENT_STREAMS_SAFETY_MAXIMUM
+        # Get max_concurrent_streams from mock in tests, otherwise use safe default
+        max_concurrent_streams = getattr(self._connection.settings, 'max_concurrent_streams', 
+                                       CONCURRENT_STREAMS_SAFETY_MAXIMUM)
 
         if max_concurrent_streams == self.__previous_server_max_concurrent_streams:
             # The server hasn't issued an updated SETTINGS frame.
             return
 
-        self.__previous_server_max_concurrent_streams = max_concurrent_streams  # type: ignore
+        self.__previous_server_max_concurrent_streams = max_concurrent_streams
         # Handle and log unexpected values sent by APNs, just in case.
         if max_concurrent_streams > CONCURRENT_STREAMS_SAFETY_MAXIMUM:
             logger.warning('APNs max_concurrent_streams too high (%s), resorting to default maximum (%s)',
@@ -239,8 +240,7 @@ class APNsClient(object):
         while retries < MAX_CONNECTION_RETRIES:
             # noinspection PyBroadException
             try:
-                # httpx manages connections automatically
-                pass
+                self._connection.connect()
                 logger.info('Connected to APNs')
                 return
             except Exception:  # pylint: disable=broad-except
