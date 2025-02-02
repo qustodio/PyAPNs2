@@ -1,0 +1,48 @@
+# Marker file for PEP 561
+from typing import Any, Dict, Optional
+
+def encode(payload: Dict[str, Any], key: str, algorithm: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> str: ...
+from typing import Any, Dict, Optional, Union
+from ssl import SSLContext
+
+class Response:
+    status_code: int
+    def read(self) -> bytes: ...
+    def stream_id(self) -> int: ...
+
+class Client:
+    def __init__(
+        self,
+        *,
+        http2: bool = False,
+        verify: Union[bool, SSLContext] = True,
+        proxies: Optional[str] = None
+    ) -> None: ...
+    
+    def post(self, url: str, *, content: bytes, headers: Dict[str, str]) -> Response: ...
+    def get(self, url: str) -> Response: ...
+    def close(self) -> None: ...
+# Marker file for PEP 561
+from typing import Any, Dict, Optional
+
+def encode(payload: Dict[str, Any], key: str, algorithm: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> str: ...
+# Marker file for PEP 561
+from typing import Any, Dict, Optional, Union
+from ssl import SSLContext
+
+class Response:
+    status_code: int
+    def read(self) -> bytes: ...
+
+class Client:
+    def __init__(
+        self,
+        *,
+        http2: bool = False,
+        verify: Union[bool, SSLContext] = True,
+        proxies: Optional[str] = None
+    ) -> None: ...
+    
+    def post(self, url: str, *, content: bytes, headers: Dict[str, str]) -> Response: ...
+    def get(self, url: str) -> Response: ...
+    def close(self) -> None: ...
