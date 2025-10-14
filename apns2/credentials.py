@@ -1,12 +1,10 @@
-import time
-from typing import Optional, Tuple, TYPE_CHECKING
-
-import jwt
-
 import ssl
+import time
 from typing import Optional, TYPE_CHECKING
+from typing import Tuple
 
 import httpx
+import jwt
 
 if TYPE_CHECKING:
     from ssl import SSLContext
@@ -22,8 +20,10 @@ class Credentials(object):
         self.__ssl_context = ssl_context
 
     # Creates a connection with the credentials, if available or necessary.
-    def create_connection(self, server: str, port: int, proto: Optional[str], proxy_host: Optional[str] = None,
-                          proxy_port: Optional[int] = None) -> httpx.Client:
+    def create_connection(
+        self, server: str, port: int, proto: Optional[str], proxy_host: Optional[str] = None,
+        proxy_port: Optional[int] = None
+        ) -> httpx.Client:
         proxies = None
         if proxy_host and proxy_port:
             proxies = f"http://{proxy_host}:{proxy_port}"
@@ -31,7 +31,7 @@ class Credentials(object):
         return httpx.Client(
             http2=True,
             verify=self.__ssl_context if self.__ssl_context else True,
-            proxies=proxies
+            proxy=proxies
         )
 
     def get_authorization_header(self, topic: Optional[str]) -> Optional[str]:
@@ -40,8 +40,10 @@ class Credentials(object):
 
 # Credentials subclass for certificate authentication
 class CertificateCredentials(Credentials):
-    def __init__(self, cert_file: Optional[str] = None, password: Optional[str] = None,
-                 cert_chain: Optional[str] = None) -> None:
+    def __init__(
+        self, cert_file: Optional[str] = None, password: Optional[str] = None,
+        cert_chain: Optional[str] = None
+    ) -> None:
         ssl_context = ssl.create_default_context()
         if cert_file:
             ssl_context.load_cert_chain(cert_file, password=password)
@@ -52,9 +54,11 @@ class CertificateCredentials(Credentials):
 
 # Credentials subclass for JWT token based authentication
 class TokenCredentials(Credentials):
-    def __init__(self, auth_key_path: str, auth_key_id: str, team_id: str,
-                 encryption_algorithm: str = DEFAULT_TOKEN_ENCRYPTION_ALGORITHM,
-                 token_lifetime: int = DEFAULT_TOKEN_LIFETIME) -> None:
+    def __init__(
+        self, auth_key_path: str, auth_key_id: str, team_id: str,
+        encryption_algorithm: str = DEFAULT_TOKEN_ENCRYPTION_ALGORITHM,
+        token_lifetime: int = DEFAULT_TOKEN_LIFETIME
+    ) -> None:
         self.__auth_key = self._get_signing_key(auth_key_path)
         self.__auth_key_id = auth_key_id
         self.__team_id = team_id
@@ -95,9 +99,13 @@ class TokenCredentials(Credentials):
                 'alg': self.__encryption_algorithm,
                 'kid': self.__auth_key_id,
             }
-            jwt_token = str(jwt.encode(token_dict, self.__auth_key,
-                                       algorithm=self.__encryption_algorithm,
-                                       headers=headers))
+            jwt_token = str(
+                jwt.encode(
+                    token_dict, self.__auth_key,
+                    algorithm=self.__encryption_algorithm,
+                    headers=headers
+                )
+            )
 
             # Cache JWT token for later use. One JWT token per connection.
             # https://developer.apple.com/documentation/usernotifications/setting_up_a_remote_notification_server/establishing_a_token-based_connection_to_apns
