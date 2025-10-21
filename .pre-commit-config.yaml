@@ -1,0 +1,79 @@
+---
+default_language_version:
+  python: python3.12
+repos:
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages:
+          - commit-msg
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.4
+    hooks:
+      - id: ruff-format
+        args:
+          - --preview
+        stages:
+          - pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.4
+    hooks:
+      - id: ruff
+        args:
+          - --fix
+          - --preview
+          - --exit-non-zero-on-fix
+        stages:
+          - pre-commit
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.2.0
+    hooks:
+      - id: check-merge-conflict
+        stages:
+          - pre-commit
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^notification/tests/.*\.[html|txt]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: debug-statements
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.2.0
+    hooks:
+      - id: no-commit-to-branch
+        args:
+          - --branch=master
+          - --branch=develop
+        stages:
+          - pre-commit
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        args: ["--disallow-untyped-defs"]
+        stages:
+          - pre-commit
+        additional_dependencies:
+          - types-freezegun
+          - types-requests
+          - types-redis
+          - types-python-dateutil
+          - types-pytz
+          - types-setuptools
+          - types-chardet
+          - types-retry
+          - types-six
+          - types-mock
+          - types-cachetools
+        exclude: |
+          (?x)^(
+              qustodio/settings/.*.py |
+              qustodio/third_party/mschap/.*.py |
+              qustodio/third_party/huawei/push_admin/.*.py |
+              scripts/.*.py |
+              requirements/.*.py
+          )$
