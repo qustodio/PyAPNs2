@@ -1,8 +1,13 @@
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from apns2.client import APNsClient, Notification
+from apns2.client import (
+    APNsClient,
+    Notification,
+    NotificationPriority,
+    NotificationType,
+)
 from apns2.credentials import Credentials
 from apns2.payload import Payload
 
@@ -42,27 +47,28 @@ def client(mock_credentials: Mock) -> APNsClient:
     return APNsClient(credentials=mock_credentials)
 
 
-@pytest.fixture
-def mock_httpx_client() -> AsyncMock:
-    mock_client = AsyncMock()
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-    mock_client.post.return_value = mock_response
-    return mock_client
-
-
-def test_client_initialization() -> None:
-    """Test that APNsClient can be initialized with different credential types."""
-    # Test with credentials object
+def test_client_initialization_with_different_options() -> None:
+    """Test APNsClient initialization with various configuration options."""
+    # Test basic initialization
     credentials = Credentials()
     client = APNsClient(credentials=credentials)
-    assert client is not None
+    assert client._server == APNsClient.LIVE_SERVER
+    assert client._port == APNsClient.DEFAULT_PORT
 
-    # Test certificate initialization would require a valid certificate
-    # So we just verify that the client can be initialized with a credentials object
-    assert hasattr(client, "_APNsClient__credentials")
-    assert client._APNsClient__credentials is not None
+    # Test sandbox mode
+    client_sandbox = APNsClient(credentials=credentials, use_sandbox=True)
+    assert client_sandbox._server == APNsClient.SANDBOX_SERVER
+
+    # Test alternative port
+    client_alt_port = APNsClient(credentials=credentials, use_alternative_port=True)
+    assert client_alt_port._port == APNsClient.ALTERNATIVE_PORT
+
+    # Test both sandbox and alternative port
+    client_both = APNsClient(
+        credentials=credentials, use_sandbox=True, use_alternative_port=True
+    )
+    assert client_both._server == APNsClient.SANDBOX_SERVER
+    assert client_both._port == APNsClient.ALTERNATIVE_PORT
 
 
 def test_send_notification_success(client: APNsClient, mock_credentials: Mock) -> None:
@@ -216,3 +222,407 @@ def test_send_notification_json_exception_handling(
 
     result = client.send_notification(token, payload, TOPIC)
     assert result == "InternalException"
+
+
+def test_notification_priority_and_type_inference() -> None:
+    """Test that push types are correctly inferred from topic and payload."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+
+    # Test VoIP inference
+    payload = Payload(alert="Test")
+    client.send_notification(token, payload, "com.example.app.voip")
+
+    # Check that the call was made with VoIP push type
+    call_args = mock_connection.post.call_args
+    headers = (
+        call_args[1]["headers"]
+        if "headers" in call_args[1]
+        else call_args.kwargs["headers"]
+    )
+    assert headers.get("apns-push-type") == "voip"
+
+
+def test_notification_with_custom_priority() -> None:
+    """Test sending notification with custom priority."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    # Test with delayed priority
+    client.send_notification(
+        token, payload, TOPIC, priority=NotificationPriority.Delayed
+    )
+
+    call_args = mock_connection.post.call_args
+    headers = (
+        call_args[1]["headers"]
+        if "headers" in call_args[1]
+        else call_args.kwargs["headers"]
+    )
+    assert headers.get("apns-priority") == "5"
+
+
+def test_notification_with_collapse_id_and_expiration() -> None:
+    """Test notification with collapse ID and expiration."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    client.send_notification(
+        token,
+        payload,
+        TOPIC,
+        collapse_id="test-collapse",
+        expiration=1234567890,
+        push_type=NotificationType.Alert,
+    )
+
+    call_args = mock_connection.post.call_args
+    headers = (
+        call_args[1]["headers"]
+        if "headers" in call_args[1]
+        else call_args.kwargs["headers"]
+    )
+    assert headers.get("apns-collapse-id") == "test-collapse"
+    assert headers.get("apns-expiration") == "1234567890"
+    assert headers.get("apns-push-type") == "alert"
+
+
+def test_certificate_credentials_initialization() -> None:
+    """Test client initialization with certificate path."""
+    with patch("apns2.client.CertificateCredentials") as mock_cert_creds:
+        mock_cert_instance = Mock()
+        mock_cert_creds.return_value = mock_cert_instance
+
+        client = APNsClient(credentials="fake_cert.pem", password="test_password")
+
+        mock_cert_creds.assert_called_once_with("fake_cert.pem", "test_password")
+        # Verify credentials were set (accessing private attribute for testing)
+        assert hasattr(client, "_APNsClient__credentials")
+        assert client._APNsClient__credentials == mock_cert_instance  # type: ignore[attr-defined]
+
+
+def test_push_type_inference_background() -> None:
+    """Test background push type inference."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+
+    # Background payload (no alert, badge, or sound)
+    payload = Payload(content_available=True)
+    client.send_notification(token, payload, TOPIC)
+
+    call_args = mock_connection.post.call_args
+    headers = (
+        call_args[1]["headers"]
+        if "headers" in call_args[1]
+        else call_args.kwargs["headers"]
+    )
+    assert headers.get("apns-push-type") == "background"
+
+
+def test_authorization_header_inclusion() -> None:
+    """Test that authorization header is included when provided by credentials."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = "Bearer test-token"
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    client.send_notification(token, payload, TOPIC)
+
+    call_args = mock_connection.post.call_args
+    headers = (
+        call_args[1]["headers"]
+        if "headers" in call_args[1]
+        else call_args.kwargs["headers"]
+    )
+    assert headers.get("authorization") == "Bearer test-token"
+
+
+def test_multiple_topic_types_inference() -> None:
+    """Test push type inference for different topic suffixes."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    # Test different topic suffixes
+    test_cases = [
+        ("com.example.app.complication", "complication"),
+        ("com.example.app.pushkit.fileprovider", "fileprovider"),
+        ("com.example.app.voip", "voip"),
+        ("com.example.app", "alert"),  # regular app with alert
+    ]
+
+    for topic, expected_type in test_cases:
+        mock_connection.reset_mock()
+        client.send_notification(token, payload, topic)
+
+        call_args = mock_connection.post.call_args
+        headers = (
+            call_args[1]["headers"]
+            if "headers" in call_args[1]
+            else call_args.kwargs["headers"]
+        )
+        assert headers.get("apns-push-type") == expected_type, (
+            f"Failed for topic {topic}"
+        )
+
+
+def test_json_encoder_usage() -> None:
+    """Test that custom JSON encoder is used when provided."""
+    import json
+
+    class CustomEncoder(json.JSONEncoder):
+        def encode(self, obj: Any) -> str:
+            return super().encode({"custom": True, **obj})
+
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials, json_encoder=CustomEncoder)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    client.send_notification(token, payload, TOPIC)
+
+    # Verify the custom encoder was used
+    call_args = mock_connection.post.call_args
+    sent_data = (
+        call_args[1]["content"]
+        if "content" in call_args[1]
+        else call_args.kwargs["content"]
+    )
+    parsed_data = json.loads(sent_data.decode())
+    assert "custom" in parsed_data
+
+
+@pytest.mark.asyncio
+async def test_async_send_notification_direct() -> None:
+    """Test async notification sending directly."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test message")
+
+    result = await client.asend_notification(token, payload, TOPIC)
+    assert result == "Success"
+    mock_connection.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_batch_with_exception_handling() -> None:
+    """Test async batch handling when some requests fail with exceptions."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    notifications = [
+        Notification(token="1" * 64, payload=Payload(alert="Test 1")),
+        Notification(token="2" * 64, payload=Payload(alert="Test 2")),
+    ]
+
+    # Mock one success and one exception
+    mock_success_response = Mock()
+    mock_success_response.status_code = 200
+    mock_success_response.json.return_value = {}
+
+    mock_connection.post.side_effect = [
+        mock_success_response,
+        Exception("Connection error"),
+    ]
+
+    results = await client.asend_notification_batch(notifications, TOPIC)
+
+    assert results["1" * 64] == "Success"
+    assert results["2" * 64] == "InternalException"
+
+
+def test_payload_size_limits() -> None:
+    """Test notification with very large payload."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 413  # Payload Too Large
+    mock_response.json.return_value = {"reason": "PayloadTooLarge"}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+
+    # Create a very large payload
+    large_custom_data = {"large_data": "x" * 5000}  # > 4KB
+    payload = Payload(alert="Test", custom=large_custom_data)
+
+    result = client.send_notification(token, payload, TOPIC)
+    assert result == "PayloadTooLarge"
+
+
+def test_various_http_error_codes() -> None:
+    """Test handling of various HTTP error codes from APNs."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    # Test different error scenarios
+    error_cases = [
+        (400, {"reason": "BadDeviceToken"}, "BadDeviceToken"),
+        (403, {"reason": "Forbidden"}, "Forbidden"),
+        (404, {"reason": "BadPath"}, "BadPath"),
+        (405, {"reason": "MethodNotAllowed"}, "MethodNotAllowed"),
+        (413, {"reason": "PayloadTooLarge"}, "PayloadTooLarge"),
+        (429, {"reason": "TooManyRequests"}, "TooManyRequests"),
+        (500, {"reason": "InternalServerError"}, "InternalServerError"),
+        (503, {"reason": "ServiceUnavailable"}, "ServiceUnavailable"),
+    ]
+
+    for status_code, json_response, expected_result in error_cases:
+        mock_response = Mock()
+        mock_response.status_code = status_code
+        mock_response.json.return_value = json_response
+        mock_connection.post.return_value = mock_response
+
+        result = client.send_notification(token, payload, TOPIC)
+        assert result == expected_result, f"Failed for status code {status_code}"
+
+
+def test_missing_topic_handling() -> None:
+    """Test notification sending without topic."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    client = APNsClient(credentials=credentials)
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    # Send without topic (None)
+    client.send_notification(token, payload, None)
+
+    call_args = mock_connection.post.call_args
+    headers = (
+        call_args[1]["headers"]
+        if "headers" in call_args[1]
+        else call_args.kwargs["headers"]
+    )
+    assert "apns-topic" not in headers
+
+
+def test_notification_url_construction() -> None:
+    """Test that notification URLs are constructed correctly."""
+    credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
+    mock_connection.post.return_value = mock_response
+    credentials.create_connection.return_value = mock_connection
+    credentials.get_authorization_header.return_value = None
+
+    # Test with different configurations
+    client_prod = APNsClient(credentials=credentials, use_sandbox=False)
+    client_sandbox = APNsClient(
+        credentials=credentials, use_sandbox=True, use_alternative_port=True
+    )
+
+    token = "1" * 64
+    payload = Payload(alert="Test")
+
+    # Test production URL
+    client_prod.send_notification(token, payload, TOPIC)
+    call_args = mock_connection.post.call_args
+    url = call_args[0][0] if len(call_args[0]) > 0 else call_args.args[0]
+    assert (
+        f"https://{APNsClient.LIVE_SERVER}:{APNsClient.DEFAULT_PORT}/3/device/{token}"
+        in url
+    )
+
+    # Reset mock and test sandbox URL
+    mock_connection.reset_mock()
+    client_sandbox.send_notification(token, payload, TOPIC)
+    call_args = mock_connection.post.call_args
+    url = call_args[0][0] if len(call_args[0]) > 0 else call_args.args[0]
+    assert (
+        f"https://{APNsClient.SANDBOX_SERVER}:{APNsClient.ALTERNATIVE_PORT}/3/device/{token}"
+        in url
+    )

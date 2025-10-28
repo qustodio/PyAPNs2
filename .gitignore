@@ -40,50 +40,36 @@ coverage.xml
 *,cover
 .hypothesis/
 .pytest_cache/
-.mypy_cache/
 
 # Virtualenv
 venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
 # Poetry
 poetry.lock
 
 # IDEs and Editors
 .idea/
-.vscode/
-*.swp
-*.swo
-*~
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# JetBrains
-.idea/
 *.iml
 *.ipr
 *.iws
 .idea_modules/
 
-# Visual Studio Code
 .vscode/
 *.code-workspace
 
-# Sublime Text
 *.sublime-project
 *.sublime-workspace
 
-# Vim
 *.swp
 *.swo
 *.swn
 .netrwhist
 
-# Emacs
 *~
 \#*\#
 /.emacs.desktop
@@ -93,35 +79,27 @@ auto-save-list
 tramp
 .\#*
 
-# PyCharm
-.idea/
-
-# Spyder
 .spyderproject
 .spyproject
 
-# Rope
 .ropeproject
 
-# mkdocs documentation
-/site
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# Professional PyCharm
-.idea/
+# Windows
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -148,22 +126,6 @@ celerybeat.pid
 
 # Environments
 .env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
 
 # mypy
 .mypy_cache/
@@ -179,35 +141,10 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.cab
-*.msi
-*.msm
-*.msp
-
-# Linux
-*~
+# mkdocs documentation
+/site
 
 # Temporary files
 *.tmp
 *.temp
 *.log
-
-# Build artifacts
-build/
-dist/
-*.egg-info/
-
