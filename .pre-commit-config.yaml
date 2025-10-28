@@ -1,6 +1,6 @@
 ---
 default_language_version:
-  python: python3.12
+  python: python3.13
 repos:
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.4.0
@@ -54,7 +54,7 @@ repos:
     rev: v1.11.2
     hooks:
       - id: mypy
-        args: ["--disallow-untyped-defs"]
+        args: [ "--disallow-untyped-defs", "--disable-error-code=misc" ]
         stages:
           - pre-commit
         additional_dependencies:
@@ -69,6 +69,7 @@ repos:
           - types-six
           - types-mock
           - types-cachetools
+          - pytest
         exclude: |
           (?x)^(
               qustodio/settings/.*.py |

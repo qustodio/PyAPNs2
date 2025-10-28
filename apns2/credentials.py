@@ -9,7 +9,7 @@ DEFAULT_TOKEN_ENCRYPTION_ALGORITHM = "ES256"
 
 
 # Abstract Base class. This should not be instantiated directly.
-class Credentials(object):
+class Credentials:
     def __init__(self, ssl_context: ssl.SSLContext | None = None) -> None:
         super().__init__()
         self.__ssl_context = ssl_context

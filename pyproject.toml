@@ -9,7 +9,8 @@ version = "0.7.1"
 description = "A python library for interacting with the Apple Push Notification Service via HTTP/2 protocol"
 readme = 'README.md'
 authors = [
-    "Sergey Petrov <me@pr0ger.prg>"
+    "Sergey Petrov <me@pr0ger.prg>",
+    "Javier Cazallas <javier.cazallas@qustodio.com>"
 ]
 license = "MIT"
 
@@ -24,7 +25,7 @@ classifiers = [
 [tool.poetry.dependencies]
 python = ">=3.12,<4.0"
 cryptography = ">=1.7.2"
-httpx = ">=0.28.1"
+httpx = { version = ">=0.28.1", extras = ["http2"] }
 pyjwt = ">=2.0.0"
 
 [tool.poetry.group.test]
@@ -34,11 +35,18 @@ optional = true
 pytest = "^7.4.4"
 freezegun = "^1.5.1"
 
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.18.2"
+pre-commit = "^4.3.0"
+
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 mypy_path = "typings"
 ignore_missing_imports = true
+disallow_untyped_decorators = false
+warn_unused_ignores = false
 
 [tool.pylint.design]
 max-args = 10

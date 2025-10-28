@@ -35,7 +35,7 @@ DEFAULT_APNS_PRIORITY = NotificationPriority.Immediate
 logger = logging.getLogger(__name__)
 
 
-class APNsClient(object):
+class APNsClient:
     SANDBOX_SERVER = "api.development.push.apple.com"
     LIVE_SERVER = "api.push.apple.com"
 
