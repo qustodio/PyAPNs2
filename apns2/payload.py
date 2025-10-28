@@ -1,23 +1,23 @@
-from typing import Any, Dict, List, Optional, Union, Iterable
+from typing import Any, Iterable
 
 MAX_PAYLOAD_SIZE = 4096
 
 
-class PayloadAlert(object):
+class PayloadAlert:
     def __init__(
-            self,
-            title: Optional[str] = None,
-            title_localized_key: Optional[str] = None,
-            title_localized_args: Optional[List[str]] = None,
-            subtitle: Optional[str] = None,
-            subtitle_localized_key: Optional[str] = None,
-            subtitle_localized_args: Optional[List[str]] = None,
-            body: Optional[str] = None,
-            body_localized_key: Optional[str] = None,
-            body_localized_args: Optional[List[str]] = None,
-            action_localized_key: Optional[str] = None,
-            action: Optional[str] = None,
-            launch_image: Optional[str] = None
+        self,
+        title: str | None = None,
+        title_localized_key: str | None = None,
+        title_localized_args: list[str] | None = None,
+        subtitle: str | None = None,
+        subtitle_localized_key: str | None = None,
+        subtitle_localized_args: list[str] | None = None,
+        body: str | None = None,
+        body_localized_key: str | None = None,
+        body_localized_args: list[str] | None = None,
+        action_localized_key: str | None = None,
+        action: str | None = None,
+        launch_image: str | None = None,
     ) -> None:
         self.title = title
         self.title_localized_key = title_localized_key
@@ -32,53 +32,53 @@ class PayloadAlert(object):
         self.action = action
         self.launch_image = launch_image
 
-    def dict(self) -> Dict[str, Any]:
-        result = {}  # type: Dict[str, Any]
+    def dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
 
         if self.title:
-            result['title'] = self.title
+            result["title"] = self.title
         if self.title_localized_key:
-            result['title-loc-key'] = self.title_localized_key
+            result["title-loc-key"] = self.title_localized_key
         if self.title_localized_args:
-            result['title-loc-args'] = self.title_localized_args
+            result["title-loc-args"] = self.title_localized_args
 
         if self.subtitle:
-            result['subtitle'] = self.subtitle
+            result["subtitle"] = self.subtitle
         if self.subtitle_localized_key:
-            result['subtitle-loc-key'] = self.subtitle_localized_key
+            result["subtitle-loc-key"] = self.subtitle_localized_key
         if self.subtitle_localized_args:
-            result['subtitle-loc-args'] = self.subtitle_localized_args
+            result["subtitle-loc-args"] = self.subtitle_localized_args
 
         if self.body:
-            result['body'] = self.body
+            result["body"] = self.body
         if self.body_localized_key:
-            result['loc-key'] = self.body_localized_key
+            result["loc-key"] = self.body_localized_key
         if self.body_localized_args:
-            result['loc-args'] = self.body_localized_args
+            result["loc-args"] = self.body_localized_args
 
         if self.action_localized_key:
-            result['action-loc-key'] = self.action_localized_key
+            result["action-loc-key"] = self.action_localized_key
         if self.action:
-            result['action'] = self.action
+            result["action"] = self.action
 
         if self.launch_image:
-            result['launch-image'] = self.launch_image
+            result["launch-image"] = self.launch_image
 
         return result
 
 
-class Payload(object):
+class Payload:
     def __init__(
-            self,
-            alert: Union[PayloadAlert, str, None] = None,
-            badge: Optional[int] = None,
-            sound: Optional[str] = None,
-            category: Optional[str] = None,
-            url_args: Optional[Iterable[str]] = None,
-            custom: Optional[Dict[str, Any]] = None,
-            thread_id: Optional[str] = None,
-            content_available: bool = False,
-            mutable_content: bool = False,
+        self,
+        alert: PayloadAlert | str | None = None,
+        badge: int | None = None,
+        sound: str | None = None,
+        category: str | None = None,
+        url_args: Iterable[str] | None = None,
+        custom: dict[str, Any] | None = None,
+        thread_id: str | None = None,
+        content_available: bool = False,
+        mutable_content: bool = False,
     ) -> None:
         self.alert = alert
         self.badge = badge
@@ -90,30 +90,28 @@ class Payload(object):
         self.mutable_content = mutable_content
         self.thread_id = thread_id
 
-    def dict(self) -> Dict[str, Any]:
-        result = {
-            'aps': {}
-        }  # type: Dict[str, Any]
+    def dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"aps": {}}
 
         if self.alert is not None:
             if isinstance(self.alert, PayloadAlert):
-                result['aps']['alert'] = self.alert.dict()
+                result["aps"]["alert"] = self.alert.dict()
             else:
-                result['aps']['alert'] = self.alert
+                result["aps"]["alert"] = self.alert
         if self.badge is not None:
-            result['aps']['badge'] = self.badge
+            result["aps"]["badge"] = self.badge
         if self.sound is not None:
-            result['aps']['sound'] = self.sound
+            result["aps"]["sound"] = self.sound
         if self.content_available:
-            result['aps']['content-available'] = 1
+            result["aps"]["content-available"] = 1
         if self.mutable_content:
-            result['aps']['mutable-content'] = 1
+            result["aps"]["mutable-content"] = 1
         if self.thread_id is not None:
-            result['aps']['thread-id'] = self.thread_id
+            result["aps"]["thread-id"] = self.thread_id
         if self.category is not None:
-            result['aps']['category'] = self.category
+            result["aps"]["category"] = self.category
         if self.url_args is not None:
-            result['aps']['url-args'] = self.url_args
+            result["aps"]["url-args"] = self.url_args
         if self.custom is not None:
             result.update(self.custom)
 

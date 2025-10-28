@@ -1,126 +1,216 @@
+import asyncio
 import collections
 import json
 import logging
-import time
-import typing
-import weakref
 from enum import Enum
-from threading import Thread
-from typing import Dict, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Coroutine, Iterable, TYPE_CHECKING, TypeVar
 
 from .credentials import CertificateCredentials, Credentials
-from .errors import ConnectionFailed, exception_class_for_reason
-# We don't generally need to know about the Credentials subclasses except to
-# keep the old API, where APNsClient took a cert_file
 from .payload import Payload
+
+if TYPE_CHECKING:
+    from httpx import Response
+
+T = TypeVar("T")
 
 
 class NotificationPriority(Enum):
-    Immediate = '10'
-    Delayed = '5'
+    Immediate = "10"
+    Delayed = "5"
 
 
 class NotificationType(Enum):
-    Alert = 'alert'
-    Background = 'background'
-    VoIP = 'voip'
-    Complication = 'complication'
-    FileProvider = 'fileprovider'
-    MDM = 'mdm'
+    Alert = "alert"
+    Background = "background"
+    VoIP = "voip"
+    Complication = "complication"
+    FileProvider = "fileprovider"
+    MDM = "mdm"
 
 
-RequestStream = collections.namedtuple('RequestStream', ['stream_id', 'token'])
-Notification = collections.namedtuple('Notification', ['token', 'payload'])
+Notification = collections.namedtuple("Notification", ["token", "payload"])
 
 DEFAULT_APNS_PRIORITY = NotificationPriority.Immediate
-CONCURRENT_STREAMS_SAFETY_MAXIMUM = 1000
-MAX_CONNECTION_RETRIES = 3
 
 logger = logging.getLogger(__name__)
 
 
-class APNsClient(object):
-    SANDBOX_SERVER = 'api.development.push.apple.com'
-    LIVE_SERVER = 'api.push.apple.com'
+class APNsClient:
+    SANDBOX_SERVER = "api.development.push.apple.com"
+    LIVE_SERVER = "api.push.apple.com"
 
     DEFAULT_PORT = 443
     ALTERNATIVE_PORT = 2197
 
-    def __init__(self,
-                 credentials: Union[Credentials, str],
-                 use_sandbox: bool = False, use_alternative_port: bool = False, proto: Optional[str] = None,
-                 json_encoder: Optional[type] = None, password: Optional[str] = None,
-                 proxy_host: Optional[str] = None, proxy_port: Optional[int] = None,
-                 heartbeat_period: Optional[float] = None) -> None:
+    def __init__(
+        self,
+        credentials: Credentials | str,
+        use_sandbox: bool = False,
+        use_alternative_port: bool = False,
+        proto: str | None = None,
+        json_encoder: type | None = None,
+        password: str | None = None,
+        proxy_host: str | None = None,
+        proxy_port: int | None = None,
+    ) -> None:
         if isinstance(credentials, str):
             self.__credentials = CertificateCredentials(credentials, password)  # type: Credentials
         else:
             self.__credentials = credentials
-        self._init_connection(use_sandbox, use_alternative_port, proto, proxy_host, proxy_port)
-
-        if heartbeat_period:
-            self._start_heartbeat(heartbeat_period)
+        self._init_connection(
+            use_sandbox, use_alternative_port, proto, proxy_host, proxy_port
+        )
 
         self.__json_encoder = json_encoder
-        self.__max_concurrent_streams = 0
-        self.__previous_server_max_concurrent_streams = None
 
-    def _init_connection(self, use_sandbox: bool, use_alternative_port: bool, proto: Optional[str],
-                         proxy_host: Optional[str], proxy_port: Optional[int]) -> None:
-        server = self.SANDBOX_SERVER if use_sandbox else self.LIVE_SERVER
-        port = self.ALTERNATIVE_PORT if use_alternative_port else self.DEFAULT_PORT
-        self._connection = self.__credentials.create_connection(server, port, proto, proxy_host, proxy_port)
+    def _init_connection(
+        self,
+        use_sandbox: bool,
+        use_alternative_port: bool,
+        proto: str | None,
+        proxy_host: str | None,
+        proxy_port: int | None,
+    ) -> None:
+        self._server = self.SANDBOX_SERVER if use_sandbox else self.LIVE_SERVER
+        self._port = (
+            self.ALTERNATIVE_PORT if use_alternative_port else self.DEFAULT_PORT
+        )
+        self._connection = self.__credentials.create_connection(
+            self._server, self._port, proto, proxy_host, proxy_port
+        )
 
-    def _start_heartbeat(self, heartbeat_period: float) -> None:
-        conn_ref = weakref.ref(self._connection)
+    def send_notification(
+        self,
+        token_hex: str,
+        notification: Payload,
+        topic: str | None = None,
+        priority: NotificationPriority = NotificationPriority.Immediate,
+        expiration: int | None = None,
+        collapse_id: str | None = None,
+        push_type: NotificationType | None = None,
+    ) -> str | tuple[str, str]:
+        return self._run_async(
+            lambda: self.asend_notification(
+                token_hex,
+                notification,
+                topic,
+                priority,
+                expiration,
+                collapse_id,
+                push_type,
+            )
+        )
 
-        def watchdog() -> None:
-            while True:
-                conn = conn_ref()
-                if conn is None:
-                    break
+    def send_notification_batch(
+        self,
+        notifications: Iterable[Notification],
+        topic: str | None = None,
+        priority: NotificationPriority = NotificationPriority.Immediate,
+        expiration: int | None = None,
+        collapse_id: str | None = None,
+        push_type: NotificationType | None = None,
+    ) -> dict[str, str | tuple[str, str]]:
+        return self._run_async(
+            lambda: self.asend_notification_batch(
+                notifications, topic, priority, expiration, collapse_id, push_type
+            )
+        )
 
-                conn.ping('-' * 8)
-                time.sleep(heartbeat_period)
+    async def asend_notification(
+        self,
+        token_hex: str,
+        notification: Payload,
+        topic: str | None = None,
+        priority: NotificationPriority = NotificationPriority.Immediate,
+        expiration: int | None = None,
+        collapse_id: str | None = None,
+        push_type: NotificationType | None = None,
+    ) -> str | tuple[str, str]:
+        temp_notification = Notification(token=token_hex, payload=notification)
+        response = await self._send_single_notification(
+            temp_notification, topic, priority, expiration, collapse_id, push_type
+        )
+        return self._process_response(response)
 
-        thread = Thread(target=watchdog)
-        thread.setDaemon(True)
-        thread.start()
+    async def asend_notification_batch(
+        self,
+        notifications: Iterable[Notification],
+        topic: str | None = None,
+        priority: NotificationPriority = NotificationPriority.Immediate,
+        expiration: int | None = None,
+        collapse_id: str | None = None,
+        push_type: NotificationType | None = None,
+    ) -> dict[str, str | tuple[str, str]]:
+        notifications_list = list(notifications)
+        if not notifications_list:
+            return {}
 
-    def send_notification(self, token_hex: str, notification: Payload, topic: Optional[str] = None,
-                          priority: NotificationPriority = NotificationPriority.Immediate,
-                          expiration: Optional[int] = None, collapse_id: Optional[str] = None) -> None:
-        stream_id = self.send_notification_async(token_hex, notification, topic, priority, expiration, collapse_id)
-        result = self.get_notification_result(stream_id)
-        if result != 'Success':
-            if isinstance(result, tuple):
-                reason, info = result
-                raise exception_class_for_reason(reason)(info)
+        logger.info(
+            f"Starting async batch send of {len(notifications_list)} notifications"
+        )
+
+        # Create all async tasks at once for HTTP/2 multiplexing
+        tasks = [
+            self._send_single_notification(
+                notification, topic, priority, expiration, collapse_id, push_type
+            )
+            for notification in notifications_list
+        ]
+
+        logger.info(f"Created {len(tasks)} concurrent HTTP/2 streams")
+
+        # Execute all requests concurrently
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        results: dict[str, str | tuple[str, str]] = {}
+        for notification, response in zip(notifications_list, responses):
+            if isinstance(response, Exception):
+                logger.error(
+                    f"Error sending notification to {notification.token}: {response}"
+                )
+                results[notification.token] = "InternalException"
             else:
-                raise exception_class_for_reason(result)
+                results[notification.token] = self._process_response(response)
+                logger.debug(
+                    f"Got result for {notification.token}: {results[notification.token]}"
+                )
 
-    def send_notification_async(self, token_hex: str, notification: Payload, topic: Optional[str] = None,
-                                priority: NotificationPriority = NotificationPriority.Immediate,
-                                expiration: Optional[int] = None, collapse_id: Optional[str] = None,
-                                push_type: Optional[NotificationType] = None) -> int:
-        json_str = json.dumps(notification.dict(), cls=self.__json_encoder, ensure_ascii=False, separators=(',', ':'))
-        json_payload = json_str.encode('utf-8')
+        logger.info(f"Completed async batch send of {len(results)} notifications")
+        return results
+
+    async def _send_single_notification(
+        self,
+        notification: Notification,
+        topic: str | None,
+        priority: NotificationPriority,
+        expiration: int | None,
+        collapse_id: str | None,
+        push_type: NotificationType | None,
+    ) -> "Response":
+        json_str = json.dumps(
+            notification.payload.dict(),
+            cls=self.__json_encoder,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        json_payload = json_str.encode("utf-8")
 
         headers = {}
 
-        inferred_push_type = None  # type: Optional[str]
+        inferred_push_type = None
         if topic is not None:
-            headers['apns-topic'] = topic
-            if topic.endswith('.voip'):
+            headers["apns-topic"] = topic
+            if topic.endswith(".voip"):
                 inferred_push_type = NotificationType.VoIP.value
-            elif topic.endswith('.complication'):
+            elif topic.endswith(".complication"):
                 inferred_push_type = NotificationType.Complication.value
-            elif topic.endswith('.pushkit.fileprovider'):
+            elif topic.endswith(".pushkit.fileprovider"):
                 inferred_push_type = NotificationType.FileProvider.value
             elif any([
-                notification.alert is not None,
-                notification.badge is not None,
-                notification.sound is not None,
+                notification.payload.alert is not None,
+                notification.payload.badge is not None,
+                notification.payload.sound is not None,
             ]):
                 inferred_push_type = NotificationType.Alert.value
             else:
@@ -130,136 +220,207 @@ class APNsClient(object):
             inferred_push_type = push_type.value
 
         if inferred_push_type:
-            headers['apns-push-type'] = inferred_push_type
+            headers["apns-push-type"] = inferred_push_type
 
         if priority != DEFAULT_APNS_PRIORITY:
-            headers['apns-priority'] = priority.value
+            headers["apns-priority"] = priority.value
 
         if expiration is not None:
-            headers['apns-expiration'] = '%d' % expiration
+            headers["apns-expiration"] = "%d" % expiration
 
         auth_header = self.__credentials.get_authorization_header(topic)
         if auth_header is not None:
-            headers['authorization'] = auth_header
+            headers["authorization"] = auth_header
 
         if collapse_id is not None:
-            headers['apns-collapse-id'] = collapse_id
+            headers["apns-collapse-id"] = collapse_id
 
-        url = '/3/device/{}'.format(token_hex)
-        stream_id = self._connection.request('POST', url, json_payload, headers)  # type: int
-        return stream_id
+        url = f"https://{self._server}:{self._port}/3/device/{notification.token}"
 
-    def get_notification_result(self, stream_id: int) -> Union[str, Tuple[str, str]]:
-        """
-        Get result for specified stream
-        The function returns: 'Success' or 'failure reason' or ('Unregistered', timestamp)
-        """
-        with self._connection.get_response(stream_id) as response:
-            if response.status == 200:
-                return 'Success'
-            else:
-                raw_data = response.read().decode('utf-8')
-                data = json.loads(raw_data)  # type: Dict[str, str]
-                if response.status == 410:
-                    return data['reason'], data['timestamp']
-                else:
-                    return data['reason']
+        # Use self._connection directly - this is the key improvement
+        # Multiple calls can execute concurrently as HTTP/2 streams
+        response = await self._connection.post(
+            url, content=json_payload, headers=headers
+        )
+        return response
 
-    def send_notification_batch(self, notifications: Iterable[Notification], topic: Optional[str] = None,
-                                priority: NotificationPriority = NotificationPriority.Immediate,
-                                expiration: Optional[int] = None, collapse_id: Optional[str] = None,
-                                push_type: Optional[NotificationType] = None) -> Dict[str, Union[str, Tuple[str, str]]]:
-        """
-        Send a notification to a list of tokens in batch. Instead of sending a synchronous request
-        for each token, send multiple requests concurrently. This is done on the same connection,
-        using HTTP/2 streams (one request per stream).
-
-        APNs allows many streams simultaneously, but the number of streams can vary depending on
-        server load. This method reads the SETTINGS frame sent by the server to figure out the
-        maximum number of concurrent streams. Typically, APNs reports a maximum of 500.
-
-        The function returns a dictionary mapping each token to its result. The result is "Success"
-        if the token was sent successfully, or the string returned by APNs in the 'reason' field of
-        the response, if the token generated an error.
-        """
-        notification_iterator = iter(notifications)
-        next_notification = next(notification_iterator, None)
-        # Make sure we're connected to APNs, so that we receive and process the server's SETTINGS
-        # frame before starting to send notifications.
-        self.connect()
-
-        results = {}
-        open_streams = collections.deque()  # type: typing.Deque[RequestStream]
-        # Loop on the tokens, sending as many requests as possible concurrently to APNs.
-        # When reaching the maximum concurrent streams limit, wait for a response before sending
-        # another request.
-        while len(open_streams) > 0 or next_notification is not None:
-            # Update the max_concurrent_streams on every iteration since a SETTINGS frame can be
-            # sent by the server at any time.
-            self.update_max_concurrent_streams()
-            if next_notification is not None and len(open_streams) < self.__max_concurrent_streams:
-                logger.info('Sending to token %s', next_notification.token)
-                stream_id = self.send_notification_async(next_notification.token, next_notification.payload, topic,
-                                                         priority, expiration, collapse_id, push_type)
-                open_streams.append(RequestStream(stream_id, next_notification.token))
-
-                next_notification = next(notification_iterator, None)
-                if next_notification is None:
-                    # No tokens remaining. Proceed to get results for pending requests.
-                    logger.info('Finished sending all tokens, waiting for pending requests.')
-            else:
-                # We have at least one request waiting for response (otherwise we would have either
-                # sent new requests or exited the while loop.) Wait for the first outstanding stream
-                # to return a response.
-                pending_stream = open_streams.popleft()
-                result = self.get_notification_result(pending_stream.stream_id)
-                logger.info('Got response for %s: %s', pending_stream.token, result)
-                results[pending_stream.token] = result
-
-        return results
-
-    def update_max_concurrent_streams(self) -> None:
-        # Get the max_concurrent_streams setting returned by the server.
-        # The max_concurrent_streams value is saved in the H2Connection instance that must be
-        # accessed using a with statement in order to acquire a lock.
-        # pylint: disable=protected-access
-        with self._connection._conn as connection:
-            max_concurrent_streams = connection.remote_settings.max_concurrent_streams
-
-        if max_concurrent_streams == self.__previous_server_max_concurrent_streams:
-            # The server hasn't issued an updated SETTINGS frame.
-            return
-
-        self.__previous_server_max_concurrent_streams = max_concurrent_streams
-        # Handle and log unexpected values sent by APNs, just in case.
-        if max_concurrent_streams > CONCURRENT_STREAMS_SAFETY_MAXIMUM:
-            logger.warning('APNs max_concurrent_streams too high (%s), resorting to default maximum (%s)',
-                           max_concurrent_streams, CONCURRENT_STREAMS_SAFETY_MAXIMUM)
-            self.__max_concurrent_streams = CONCURRENT_STREAMS_SAFETY_MAXIMUM
-        elif max_concurrent_streams < 1:
-            logger.warning('APNs reported max_concurrent_streams less than 1 (%s), using value of 1',
-                           max_concurrent_streams)
-            self.__max_concurrent_streams = 1
+    def _process_response(self, response: "Response") -> str | tuple[str, str]:
+        if response.status_code == 200:
+            return "Success"
         else:
-            logger.info('APNs set max_concurrent_streams to %s', max_concurrent_streams)
-            self.__max_concurrent_streams = max_concurrent_streams
-
-    def connect(self) -> None:
-        """
-        Establish a connection to APNs. If already connected, the function does nothing. If the
-        connection fails, the function retries up to MAX_CONNECTION_RETRIES times.
-        """
-        retries = 0
-        while retries < MAX_CONNECTION_RETRIES:
-            # noinspection PyBroadException
             try:
-                self._connection.connect()
-                logger.info('Connected to APNs')
-                return
-            except Exception:  # pylint: disable=broad-except
-                # close the connnection, otherwise next connect() call would do nothing
-                self._connection.close()
-                retries += 1
-                logger.exception('Failed connecting to APNs (attempt %s of %s)', retries, MAX_CONNECTION_RETRIES)
+                data = response.json()
+                if response.status_code == 410:
+                    reason = str(data.get("reason", "Unregistered"))
+                    timestamp = str(data.get("timestamp", ""))
+                    return reason, timestamp
+                else:
+                    return str(data.get("reason", "InternalException"))
+            except Exception:
+                return "InternalException"
 
-        raise ConnectionFailed()
+    def _run_async(self, coro_factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
+        """
+        Run an async coroutine from a sync context in the most robust way possible.
+        Takes a function that creates a fresh coroutine each time to avoid reuse issues.
+        Handles all possible event loop scenarios to prevent any asyncio-related errors.
+
+        Special handling for Celery: Uses separate thread strategy to avoid memory leaks
+        caused by Celery's poor async support (see: https://github.com/celery/celery/issues/6552)
+        """
+        # Special case: If running in Celery, always use separate thread to avoid memory leaks
+        if self._is_running_in_celery():
+            logger.info(
+                "Detected Celery worker environment - using separate thread strategy to prevent memory leaks"
+            )
+            return self._run_in_separate_thread(coro_factory)
+
+        # Strategy 1: Try to detect if we're in an async context
+        try:
+            asyncio.get_running_loop()
+            # We're in an async context - must use a separate thread
+            return self._run_in_separate_thread(coro_factory)
+        except RuntimeError:
+            # No running event loop - we can proceed with direct execution
+            pass
+
+        # Strategy 2: Try to use asyncio.run (safest for most cases)
+        try:
+            fresh_coro = coro_factory()
+            return asyncio.run(fresh_coro)
+        except RuntimeError as e:
+            error_msg = str(e).lower()
+            # Handle various event loop related errors
+            if any(
+                phrase in error_msg
+                for phrase in [
+                    "event loop is closed",
+                    "event loop is running",
+                    "cannot be called from a running event loop",
+                    "there is no current event loop",
+                ]
+            ):
+                # Fall back to manual event loop management
+                return self._run_with_manual_loop(coro_factory)
+            else:
+                # Unknown RuntimeError, try thread approach as last resort
+                return self._run_in_separate_thread(coro_factory)
+        except Exception:
+            # Any other exception, try thread approach as last resort
+            return self._run_in_separate_thread(coro_factory)
+
+    def _is_running_in_celery(self) -> bool:
+        """
+        Detect if we're running inside a Celery worker.
+        This helps avoid memory leaks caused by Celery's poor async support.
+        """
+        import os
+        import sys
+
+        # Check environment variables that Celery sets
+        celery_env_vars = [
+            "CELERY_LOADER",
+            "CELERY_WORKER_DIRECT",
+            "CELERY_CURRENT_TASK",
+            "C_FORCE_ROOT",
+        ]
+        if any(key in os.environ for key in celery_env_vars):
+            return True
+
+        # Check if we're in a process that looks like a Celery worker
+        try:
+            if "celery" in sys.argv[0].lower():
+                return True
+            if any("celery" in arg.lower() for arg in sys.argv):
+                return True
+        except (AttributeError, IndexError):
+            pass
+
+        # Check if celery modules are in the call stack
+        try:
+            import inspect
+
+            for frame_info in inspect.stack():
+                filename = frame_info.filename.lower()
+                if "celery" in filename and (
+                    "worker" in filename or "task" in filename
+                ):
+                    return True
+        except Exception:
+            pass
+
+        # Check if current task context exists (most reliable for active tasks)
+        try:
+            from celery import current_task
+
+            if current_task and current_task.request:
+                return True
+        except (ImportError, AttributeError):
+            pass
+
+        return False
+
+    def _run_in_separate_thread(
+        self, coro_factory: Callable[[], Coroutine[Any, Any, T]]
+    ) -> T:
+        """Run coroutine in a completely isolated thread with its own event loop."""
+        import threading
+
+        result: T | None = None
+        exception: Exception | None = None
+
+        def run_in_thread() -> None:
+            nonlocal result, exception
+            try:
+                # Create completely isolated event loop in this thread
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    fresh_coro = coro_factory()
+                    result = new_loop.run_until_complete(fresh_coro)
+                finally:
+                    # Clean up properly
+                    try:
+                        new_loop.close()
+                    except Exception:
+                        pass  # Ignore cleanup errors
+                    try:
+                        asyncio.set_event_loop(None)
+                    except Exception:
+                        pass  # Ignore cleanup errors
+            except Exception as e:
+                exception = e
+
+        thread = threading.Thread(target=run_in_thread, daemon=True)
+        thread.start()
+        thread.join(timeout=300)  # 5 minute timeout to prevent hanging
+
+        if thread.is_alive():
+            raise RuntimeError("Async operation timed out after 5 minutes")
+
+        if exception:
+            raise exception
+        if result is None:
+            raise RuntimeError("Failed to get result from async operation")
+        return result
+
+    def _run_with_manual_loop(
+        self, coro_factory: Callable[[], Coroutine[Any, Any, T]]
+    ) -> T:
+        """Manually create and manage an event loop."""
+        loop = None
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            fresh_coro = coro_factory()
+            return loop.run_until_complete(fresh_coro)
+        finally:
+            if loop is not None:
+                try:
+                    loop.close()
+                except Exception:
+                    pass  # Ignore cleanup errors
+            try:
+                asyncio.set_event_loop(None)
+            except Exception:
+                pass  # Ignore cleanup errors

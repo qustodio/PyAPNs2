@@ -40,10 +40,111 @@ coverage.xml
 *,cover
 .hypothesis/
 .pytest_cache/
-.mypy_cache/
 
 # Virtualenv
 venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
 # Poetry
 poetry.lock
+
+# IDEs and Editors
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+.vscode/
+*.code-workspace
+
+*.sublime-project
+*.sublime-workspace
+
+*.swp
+*.swo
+*.swn
+.netrwhist
+
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+.spyderproject
+.spyproject
+
+.ropeproject
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# mkdocs documentation
+/site
+
+# Temporary files
+*.tmp
+*.temp
+*.log
