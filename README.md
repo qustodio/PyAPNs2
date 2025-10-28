@@ -1,21 +1,15 @@
 # PyAPNs2
 
-[![PyPI version](https://img.shields.io/pypi/v/apns2.svg)](https://pypi.python.org/pypi/apns2)
-[![PyPI version](https://img.shields.io/pypi/pyversions/apns2.svg)](https://pypi.python.org/pypi/apns2)
-[![Build Status](https://drone.pr0ger.dev/api/badges/Pr0Ger/PyAPNs2/status.svg)](https://drone.pr0ger.dev/Pr0Ger/PyAPNs2)
-
 A modern Python library for interacting with the Apple Push Notification service (APNs) via HTTP/2 protocol using httpx
 with full async support.
-
-## Features
 
 - ✅ **HTTP/2 Support**: Native HTTP/2 with httpx for optimal performance
 - ✅ **Async/Await**: Full async support with sync wrapper for compatibility
 - ✅ **Batch Processing**: Efficient batch notification sending with HTTP/2 multiplexing
 - ✅ **Token & Certificate Auth**: Both JWT token and certificate authentication
-- ✅ **Modern Python**: Python 3.13+ with full type hints
+- ✅ **Modern Python**: Python 3.12+ with full type hints
 - ✅ **High Performance**: Optimized for high-throughput scenarios
-- ✅ **Comprehensive Testing**: 93% test coverage with 60+ tests
+- ✅ **Comprehensive Testing**: High test coverage with 60+ comprehensive tests
 - ✅ **Production Ready**: Battle-tested with proper error handling
 
 ## Quick Start
@@ -195,8 +189,8 @@ else:
 
 ## Requirements
 
-- **Python**: 3.13+ (with full type hints support)
-- **httpx**: 0.28.1+ with HTTP/2 support (`pip install httpx[http2]`)
+- **Python**: 3.12+ (with full type hints support)
+- **httpx**: 0.28.1+ with HTTP/2 support (automatically configured)
 - **cryptography**: 1.7.2+ for certificate handling
 - **PyJWT**: 2.0.0+ for token authentication
 
@@ -241,9 +235,6 @@ curl -sSL https://install.python-poetry.org | python3 -
 
 # Install dependencies
 poetry install --with test,dev
-
-# Activate virtual environment
-poetry shell
 ```
 
 ### Running Tests
@@ -253,7 +244,7 @@ poetry shell
 poetry run pytest
 
 # Run with coverage
-poetry run pytest --cov=apns2 --cov-report=html
+poetry run coverage run -m pytest && poetry run coverage report
 
 # Run specific test file
 poetry run pytest test/test_client.py
@@ -291,7 +282,7 @@ PyAPNs2 is optimized for high-performance scenarios:
 
 If migrating from older hyper-based versions:
 
-1. **Update Python**: Minimum Python 3.13+
+1. **Update Python**: Minimum Python 3.12+
 2. **Install new version**: `poetry add apns2` or `pip install apns2`
 3. **Update imports**: Same API, no changes needed
 4. **Async support**: New `asend_notification` and `asend_notification_batch` methods
