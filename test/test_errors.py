@@ -1,6 +1,5 @@
-"""Tests for APNs error classes and exception handling."""
-
 import pytest
+
 from apns2.errors import (
     APNsException,
     BadDeviceToken,

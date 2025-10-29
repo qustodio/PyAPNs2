@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+
 from apns2.client import (
     APNsClient,
     Notification,
@@ -45,6 +46,48 @@ def mock_credentials() -> Mock:
 @pytest.fixture
 def client(mock_credentials: Mock) -> APNsClient:
     return APNsClient(credentials=mock_credentials)
+
+
+def test_celery_detection_optimization() -> None:
+    """Test that Celery detection uses the pre-computed constant."""
+    mock_credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_credentials.create_connection.return_value = mock_connection
+
+    # Import the constant to verify it exists and is accessible
+    from apns2.helpers import IS_CELERY_WORKER
+
+    # Verify the constant is a boolean
+    assert isinstance(IS_CELERY_WORKER, bool)
+
+    # Create clients and verify they use the constant
+    client1 = APNsClient(credentials=mock_credentials)
+    client2 = APNsClient(credentials=mock_credentials)
+
+    # Verify both clients have the same Celery detection result
+    assert client1._is_celery_worker == IS_CELERY_WORKER
+    assert client2._is_celery_worker == IS_CELERY_WORKER
+    assert client1._is_celery_worker == client2._is_celery_worker
+
+
+def test_multiple_clients_performance() -> None:
+    """Test that creating multiple clients is efficient (uses pre-computed constant)."""
+    from apns2.helpers import IS_CELERY_WORKER
+
+    mock_credentials = Mock(spec=Credentials)
+    mock_connection = AsyncMock()
+    mock_credentials.create_connection.return_value = mock_connection
+
+    # Create 10 clients - all should use the same pre-computed constant
+    clients = []
+    for i in range(10):
+        client = APNsClient(credentials=mock_credentials)
+        clients.append(client)
+
+    # Verify all clients have the same result (from the constant)
+    expected_result = IS_CELERY_WORKER
+    for client in clients:
+        assert client._is_celery_worker == expected_result
 
 
 def test_client_initialization_with_different_options() -> None:

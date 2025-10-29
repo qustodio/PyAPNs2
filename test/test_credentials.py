@@ -1,11 +1,10 @@
-"""Tests for credentials functionality including token management."""
-
 import ssl
 from unittest.mock import Mock, patch
 
 import pytest
-from apns2.credentials import CertificateCredentials, Credentials, TokenCredentials
 from freezegun import freeze_time
+
+from apns2.credentials import CertificateCredentials, Credentials, TokenCredentials
 
 TOPIC: str = "com.example.first_app"
 

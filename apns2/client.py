@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any, Callable, Coroutine, Iterable, TYPE_CHECKING, TypeVar
 
 from .credentials import CertificateCredentials, Credentials
+from .helpers import IS_CELERY_WORKER
 from .payload import Payload
 
 if TYPE_CHECKING:
@@ -62,6 +63,9 @@ class APNsClient:
         )
 
         self.__json_encoder = json_encoder
+
+        # Use the pre-computed Celery detection constant
+        self._is_celery_worker = IS_CELERY_WORKER
 
     def _init_connection(
         self,
@@ -269,10 +273,7 @@ class APNsClient:
         caused by Celery's poor async support (see: https://github.com/celery/celery/issues/6552)
         """
         # Special case: If running in Celery, always use separate thread to avoid memory leaks
-        if self._is_running_in_celery():
-            logger.info(
-                "Detected Celery worker environment - using separate thread strategy to prevent memory leaks"
-            )
+        if self._is_celery_worker:
             return self._run_in_separate_thread(coro_factory)
 
         # Strategy 1: Try to detect if we're in an async context
@@ -308,57 +309,6 @@ class APNsClient:
         except Exception:
             # Any other exception, try thread approach as last resort
             return self._run_in_separate_thread(coro_factory)
-
-    def _is_running_in_celery(self) -> bool:
-        """
-        Detect if we're running inside a Celery worker.
-        This helps avoid memory leaks caused by Celery's poor async support.
-        """
-        import os
-        import sys
-
-        # Check environment variables that Celery sets
-        celery_env_vars = [
-            "CELERY_LOADER",
-            "CELERY_WORKER_DIRECT",
-            "CELERY_CURRENT_TASK",
-            "C_FORCE_ROOT",
-        ]
-        if any(key in os.environ for key in celery_env_vars):
-            return True
-
-        # Check if we're in a process that looks like a Celery worker
-        try:
-            if "celery" in sys.argv[0].lower():
-                return True
-            if any("celery" in arg.lower() for arg in sys.argv):
-                return True
-        except (AttributeError, IndexError):
-            pass
-
-        # Check if celery modules are in the call stack
-        try:
-            import inspect
-
-            for frame_info in inspect.stack():
-                filename = frame_info.filename.lower()
-                if "celery" in filename and (
-                    "worker" in filename or "task" in filename
-                ):
-                    return True
-        except Exception:
-            pass
-
-        # Check if current task context exists (most reliable for active tasks)
-        try:
-            from celery import current_task
-
-            if current_task and current_task.request:
-                return True
-        except (ImportError, AttributeError):
-            pass
-
-        return False
 
     def _run_in_separate_thread(
         self, coro_factory: Callable[[], Coroutine[Any, Any, T]]

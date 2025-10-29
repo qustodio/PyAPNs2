@@ -1,8 +1,7 @@
-"""Tests for APNs payload and payload alert functionality."""
-
 import json
 
 import pytest
+
 from apns2.payload import MAX_PAYLOAD_SIZE, Payload, PayloadAlert
 
 
