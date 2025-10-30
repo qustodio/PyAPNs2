@@ -15,12 +15,16 @@ def _is_celery_worker() -> bool:
     This helps avoid memory leaks caused by Celery's poor async support.
     """
     logger.info("Detecting if running in Celery worker environment...")
-    # Check environment variables that Celery sets
+
+    # Check environment variables that Celery workers set
     celery_env_vars = [
         "CELERY_LOADER",
         "CELERY_WORKER_DIRECT",
         "CELERY_CURRENT_TASK",
         "C_FORCE_ROOT",
+        "CELERY_WORKER_POOL",
+        "CELERY_WORKER_CONCURRENCY",
+        "CELERY_WORKER_LOGLEVEL",
     ]
     if any(key in os.environ for key in celery_env_vars):
         return True
@@ -49,9 +53,11 @@ def _is_celery_worker() -> bool:
     try:
         from celery import current_task
 
-        if current_task and current_task.request:
+        task = current_task()
+        if task is not None:
             return True
-    except (ImportError, AttributeError):
+    except (ImportError, RuntimeError):
+        # RuntimeError: No active Celery app
         pass
 
     return False
