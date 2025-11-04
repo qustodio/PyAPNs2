@@ -53,14 +53,13 @@ def _is_celery_worker() -> bool:
     try:
         from celery import current_task
 
-        task = current_task()
-        if task is not None:
-            return True
-    except (ImportError, RuntimeError):
+        if current_task is not None and callable(current_task):
+            task = current_task()
+            if task is not None:
+                return True
+    except (ImportError, RuntimeError, TypeError):
         # RuntimeError: No active Celery app
         pass
-
-    return False
 
 
 # Constant that gets computed once when the module is imported
